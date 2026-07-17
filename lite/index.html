@@ -64,6 +64,10 @@
            cursor:pointer;transition:background .15s,color .15s,border-color .15s}
   .read-btn:hover{color:var(--star);border-color:var(--dim)}
   .read-btn.on{background:#7EE787;border-color:#7EE787;color:#060913;font-weight:600}
+  .read-btn.fav-on{background:#FFD98A;border-color:#FFD98A;color:#060913;font-weight:600}
+  .conn .fv{color:#FFD98A;font-size:10px}
+  .conn .fx{color:var(--faint);font-size:10px}
+  .conn .fx:hover{color:#FF5E8A}
   .conn .rd{color:#7EE787;font-size:10px;margin-left:auto;flex:none}
 
   /* ── 좌측 섹터 레일 ─────────────────────── */
@@ -594,6 +598,7 @@
     <button id="p-read" class="read-btn">착륙 기록 남기기</button>
     <button id="p-cmp" class="read-btn" style="margin-left:8px">⇄ 비교에 담기</button>
     <button id="p-dl" class="read-btn" style="margin-left:8px" title="이 문서를 마크다운 파일로 저장">⤓ MD 저장</button>
+    <button id="p-fav" class="read-btn" style="margin-left:8px" title="즐겨찾기에 담기">☆ 즐겨찾기</button>
   </div>
   <div class="panel-body">
     <div class="article" id="p-article"></div>
@@ -922,6 +927,7 @@ let hovered=null;
 let bodyLC=null;              // 본문 전문 검색용 캐시
 let tour=null;                // 학습경로 투어 {title,steps,idx,btn}
 let myView=false;             // 내 별자리 모드 (읽은 별만 점등)
+let favView=false;            // 즐겨찾기 모드 (즐겨찾은 별만 점등)
 let linkHover=null;           // 패널 속 링크 호버 → 해당 별 반짝임
 const pulses=[];              // 연결선을 타고 흐르는 항행 펄스
 let t0=performance.now();
@@ -956,12 +962,26 @@ function updateReadBtn(n){
 }
 let readTimer=null;
 
+/* ── 즐겨찾기 ── */
+const FAV_KEY="gda-favs";
+let favSet;
+try{favSet=new Set(JSON.parse(localStorage.getItem(FAV_KEY)||"[]"));}
+catch(e){favSet=new Set();}
+function saveFavs(){try{localStorage.setItem(FAV_KEY,JSON.stringify([...favSet]))}catch(e){}}
+function updateFavBtn(n){
+  const b=document.getElementById("p-fav");
+  const on=favSet.has(n.id);
+  b.textContent=on?"★ 즐겨찾음":"☆ 즐겨찾기";
+  b.classList.toggle("fav-on",on);
+}
+
 function retarget(){
   for(const n of nodes){
     let g=1;
     if(activeCat && n.cat!==activeCat) g=.12;
     if(matchSet){ g = matchSet.has(n.id)?1.25:.07; }
     if(myView){ g = readSet.has(n.id)?1.25:.05; }
+    if(favView){ g = favSet.has(n.id)?1.3:.05; }
     if(tour){ g = tour.steps.includes(n)?1.15:.06; }
     if(selected){
       if(tour){ g = n===selected?1.5:g*.9; }   // 투어 중엔 항로만 유지
@@ -1122,6 +1142,16 @@ function frame(now){
       ctx.globalAlpha=Math.min(a,.85)*.55;
       ctx.strokeStyle="#7EE787";ctx.lineWidth=.9;
       ctx.beginPath();ctx.arc(p.sx,p.sy,Math.max(size*.38,2.6),0,6.283);ctx.stroke();
+    }
+    // 즐겨찾은 별: 금색 다이아 표식
+    if(favSet.has(n.id)){
+      ctx.globalAlpha=Math.min(a,.9)*.8;
+      ctx.strokeStyle="#FFD98A";ctx.lineWidth=.9;
+      const fr=Math.max(size*.38,2.6)+3;
+      ctx.beginPath();
+      ctx.moveTo(p.sx,p.sy-fr);ctx.lineTo(p.sx+fr,p.sy);
+      ctx.lineTo(p.sx,p.sy+fr);ctx.lineTo(p.sx-fr,p.sy);
+      ctx.closePath();ctx.stroke();
     }
   }
   ctx.globalAlpha=1;
@@ -1455,6 +1485,7 @@ function selectNode(n){
     b.innerHTML='<span class="dot" style="background:'+m.color+'"></span>'+
                 escapeHtml(shortTitle(m))+
                 '<span class="right">'+
+                (favSet.has(m.id)?'<span class="fv">★</span>':"")+
                 (readSet.has(m.id)?'<span class="rd">✓</span>':"")+
                 '<span class="q-add" title="다음에 읽기에 담기">+</span></span>';
     b.onclick=e=>{
@@ -1479,7 +1510,7 @@ function selectNode(n){
     conn.appendChild(b);
   });
   // 읽음: 12초 이상 머물면 자동 착륙 기록, 버튼으로 즉시/해제 가능
-  updateReadBtn(n);updateCmpBtn();
+  updateReadBtn(n);updateCmpBtn();updateFavBtn(n);
   clearTimeout(readTimer);
   readTimer=setTimeout(()=>{if(selected===n)markRead(n);},12000);
   panel.classList.add("open");
@@ -1501,6 +1532,16 @@ document.getElementById("p-dl").onclick=()=>{
   setTimeout(()=>URL.revokeObjectURL(a.href),3000);
   hud2("저장됨: "+selected.id+".md");
   track("doc_download",selected.id);
+};
+
+/* ── 즐겨찾기 토글 ── */
+document.getElementById("p-fav").onclick=()=>{
+  if(!selected)return;
+  const on=!favSet.has(selected.id);
+  on?favSet.add(selected.id):favSet.delete(selected.id);
+  saveFavs();updateFavBtn(selected);
+  hud2(on?("즐겨찾음: "+shortTitle(selected)):"즐겨찾기 해제");
+  track(on?"fav_add":"fav_remove",selected.id);
 };
 
 /* ── 항해 히스토리: 패널 ◀▶ + 브라우저 뒤로가기 + 딥링크 ── */
@@ -1610,7 +1651,7 @@ CAT_ORDER.forEach(cat=>{
   b.innerHTML='<span class="dot" style="background:'+CAT_COLOR[cat]+
               '"></span>'+cat+'<span class="n">'+String(counts[cat]).padStart(3,"0")+"</span>";
   b.onclick=()=>{
-    exitTour(true);myView=false;
+    exitTour(true);myView=false;favView=false;
     activeCat=(activeCat===cat)?null:cat;
     selected=null;panel.classList.remove("open");
     document.querySelectorAll(".sector").forEach(s=>{
@@ -1644,7 +1685,7 @@ function doSearch(v){
     if(!selected&&!activeCat){cam.tcx=0;cam.tcy=0;cam.tcz=0;cam.tDist=1500;}
     return;}
   if(!bodyLC){bodyLC=new Map(nodes.map(n=>[n.id,(n.body||"").toLowerCase()]));}
-  exitTour(true);myView=false;
+  exitTour(true);myView=false;favView=false;
   const scored=[];
   for(const n of nodes){
     const t=(n.title||"").toLowerCase(), id=n.id.toLowerCase();
@@ -1671,6 +1712,7 @@ function doSearch(v){
     const via=viaMap.get(n.id);
     b.innerHTML='<span class="dot" style="background:'+n.color+'"></span>'+
       escapeHtml(shortTitle(n))+
+      (favSet.has(n.id)?'<span class="rd" style="color:#FFD98A">★</span>':"")+
       (readSet.has(n.id)?'<span class="rd">✓</span>':"")+
       '<span class="cat">'+(via?via+" · ":"")+n.cat+"</span>";
     b.onclick=()=>{
@@ -1806,13 +1848,13 @@ addPathGroup("LINEAGE — 사상 계보",PATHS.lineages);
 
 /* ── 내비게이션 / ABOUT ── */
 document.getElementById("nav-atlas").onclick=e=>{
-  e.preventDefault();exitTour(true);myView=false;
+  e.preventDefault();exitTour(true);myView=false;favView=false;
   activeCat=null;matchSet=null;q.value="";
   document.querySelectorAll(".sector").forEach(s=>s.classList.remove("on","off-dim"));
   closePanel();retarget();
 };
 document.getElementById("nav-random").onclick=e=>{
-  e.preventDefault();exitTour(true);myView=false;
+  e.preventDefault();exitTour(true);myView=false;favView=false;
   selectNode(nodes[Math.floor(Math.random()*nodes.length)]);
 };
 const aboutEl=document.getElementById("about");
@@ -1895,12 +1937,45 @@ function renderMylog(){
     '<div class="stat"><div class="k">완주한 항로</div><div class="v">'+toursDone().length+
       '<small> 개</small></div></div>'+
     "</div><h3>섹터별 진도</h3>"+bars+
-    '<button class="my-view-btn" id="my-view-btn">MY CONSTELLATION — 내 별자리 보기</button>';
+    '<button class="my-view-btn" id="my-view-btn">MY CONSTELLATION — 내 별자리 보기</button>'+
+    '<h3 style="margin-top:28px">즐겨찾은 별 — '+favSet.size+"</h3>"+
+    (favSet.size?[...favSet].map(id=>{
+      const m=byId.get(id);if(!m)return"";
+      return '<button class="conn fav-item" data-id="'+escapeHtml(id)+'">'+
+        '<span class="dot" style="background:'+m.color+'"></span>'+
+        escapeHtml(shortTitle(m))+
+        '<span class="right"><span class="fx" title="즐겨찾기 해제">✕</span></span></button>';
+    }).join(""):
+      '<p style="color:var(--faint);font-size:12px;line-height:1.8">문서 패널의 ☆ 버튼으로 별을 담을 수 있습니다.</p>')+
+    (favSet.size?'<button class="my-view-btn" id="fav-view-btn" style="margin-top:14px;border-color:rgba(255,217,138,.4)">★ FAVORITES — 즐겨찾은 별만 보기</button>':"");
+  document.querySelectorAll("#mylog-body .fav-item").forEach(b=>{
+    b.onclick=e=>{
+      const id=b.dataset.id,m=byId.get(id);
+      if(e.target.closest(".fx")){
+        favSet.delete(id);saveFavs();renderMylog();
+        if(selected&&selected.id===id)updateFavBtn(selected);
+        return;
+      }
+      mylogEl.classList.remove("open");
+      if(m)selectNode(m);
+    };
+    b.onmouseenter=()=>{const m=byId.get(b.dataset.id);if(m)linkHover=m;};
+    b.onmouseleave=()=>{linkHover=null;};
+  });
+  const fvb=document.getElementById("fav-view-btn");
+  if(fvb)fvb.onclick=()=>{
+    mylogEl.classList.remove("open");
+    closePanel();exitTour(true);activeCat=null;matchSet=null;myView=false;
+    document.querySelectorAll(".sector").forEach(x=>x.classList.remove("on","off-dim"));
+    favView=true;retarget();
+    cam.tcx=0;cam.tcy=0;cam.tcz=0;cam.tDist=1500;
+    hud2("FAVORITES · 즐겨찾은 별 "+favSet.size+"개 — ATLAS를 누르면 돌아갑니다");
+  };
   document.getElementById("my-view-btn").onclick=()=>{
     mylogEl.classList.remove("open");
     closePanel();exitTour(true);activeCat=null;matchSet=null;
     document.querySelectorAll(".sector").forEach(s=>s.classList.remove("on","off-dim"));
-    myView=true;retarget();
+    favView=false;myView=true;retarget();
     cam.tcx=0;cam.tcy=0;cam.tcz=0;cam.tDist=1500;
     hud2("MY CONSTELLATION · 탐사한 별 "+readSet.size+"개 — ATLAS를 누르면 돌아갑니다");
   };
@@ -2140,7 +2215,7 @@ function renderMyRoutes(){
 function startBuilding(){
   const name=(prompt("새 항로의 이름은? (예: 나의 전투 디자인 항로)")||"").trim();
   if(!name)return;
-  exitTour(true);myView=false;closePanel();
+  exitTour(true);myView=false;favView=false;closePanel();
   activeCat=null;matchSet=null;
   document.querySelectorAll(".sector").forEach(s=>s.classList.remove("on","off-dim"));
   building={title:name,steps:[]};
