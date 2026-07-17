@@ -130,7 +130,7 @@
 
   /* ── 항해 로그 (방문 궤적) ─────────────── */
   .trail{display:flex;gap:7px;align-items:center;flex-wrap:wrap;
-         padding:18px 60px 0 28px;min-height:20px}
+         padding:18px 60px 0 84px;min-height:20px}
   .trail button{background:none;border:none;color:var(--faint);font-family:var(--mono);
          font-size:9.5px;letter-spacing:.1em;cursor:pointer;padding:2px 0;max-width:120px;
          overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -169,6 +169,36 @@
   .article .empty{color:var(--faint)}
   .article strong{color:var(--star)}
 
+  /* ── 항해 히스토리 버튼 ── */
+  .hist-nav{position:absolute;top:16px;left:20px;display:flex;gap:4px;z-index:2}
+  .hist-nav button{background:none;border:1px solid var(--line);color:var(--dim);
+        width:26px;height:26px;cursor:pointer;font-size:11px;line-height:1;
+        transition:color .15s}
+  .hist-nav button:hover{color:var(--star)}
+  .hist-nav button:disabled{opacity:.25;cursor:default}
+
+  /* ── 다음에 읽기 대기열 ── */
+  .queue{border-top:1px solid var(--line);padding:10px 14px;display:flex;
+        align-items:center;gap:10px;background:rgba(10,15,30,.6)}
+  .queue[hidden]{display:none}
+  .q-label{font-family:var(--mono);font-size:8.5px;letter-spacing:.2em;
+        color:var(--faint);flex:none}
+  .q-chips{display:flex;gap:6px;overflow-x:auto;flex:1;scrollbar-width:none}
+  .q-chips::-webkit-scrollbar{display:none}
+  .q-chips button{display:flex;align-items:center;gap:6px;background:#0E1526;
+        border:none;color:var(--dim);font-size:11px;padding:5px 9px;
+        white-space:nowrap;cursor:pointer;flex:none}
+  .q-chips button:hover{color:var(--star)}
+  .q-chips .x{color:var(--faint);font-size:10px}
+  .q-chips .x:hover{color:#FF5E8A}
+  .q-next{background:var(--accent);border:none;color:#060913;font-family:var(--mono);
+        font-size:9px;font-weight:600;letter-spacing:.12em;padding:8px 11px;
+        cursor:pointer;flex:none}
+  .conn .right{margin-left:auto;display:flex;gap:8px;align-items:center;flex:none}
+  .conn .q-add{color:var(--faint);border:1px solid var(--line);width:18px;height:18px;
+        line-height:16px;text-align:center;font-size:12px;transition:all .15s}
+  .conn .q-add:hover{color:#060913;background:var(--accent);border-color:var(--accent)}
+
   /* ── 호버 라벨 ────────────────────────── */
   #tip{position:fixed;z-index:25;pointer-events:none;font-size:12px;letter-spacing:.02em;
        color:var(--star);background:rgba(6,9,19,.85);border:1px solid var(--line);
@@ -176,6 +206,9 @@
        backdrop-filter:blur(8px)}
   #tip .c{font-family:var(--mono);font-size:9px;letter-spacing:.2em;color:var(--dim);
        margin-left:8px}
+  #tip.side{transform:translate(-100%,-50%);white-space:normal;max-width:250px;
+       line-height:1.6}
+  #tip .tsum{font-size:11px;color:var(--dim);margin-top:5px;word-break:keep-all}
 
   /* ── 학습경로 (사이드바) ── */
   .path{display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;
@@ -549,6 +582,10 @@
 
 <div class="panel" id="panel">
   <button class="panel-close" id="panel-close" aria-label="패널 닫기">✕</button>
+  <div class="hist-nav">
+    <button id="hist-back" title="이전 문서로" disabled>◀</button>
+    <button id="hist-fwd" title="다음 문서로" disabled>▶</button>
+  </div>
   <div class="trail" id="trail"></div>
   <div class="panel-head">
     <span class="cat-chip"><span class="dot" id="p-dot"></span><span id="p-cat"></span></span>
@@ -556,11 +593,17 @@
     <div class="meta" id="p-meta"></div>
     <button id="p-read" class="read-btn">착륙 기록 남기기</button>
     <button id="p-cmp" class="read-btn" style="margin-left:8px">⇄ 비교에 담기</button>
+    <button id="p-dl" class="read-btn" style="margin-left:8px" title="이 문서를 마크다운 파일로 저장">⤓ MD 저장</button>
   </div>
   <div class="panel-body">
     <div class="article" id="p-article"></div>
     <h3>CONNECTED — 연결 문서</h3>
     <div id="p-conn"></div>
+  </div>
+  <div class="queue" id="queue" hidden>
+    <span class="q-label">다음에<br>읽기</span>
+    <div class="q-chips" id="q-chips"></div>
+    <button class="q-next" id="q-next">다음 →</button>
   </div>
 </div>
 
@@ -1256,6 +1299,7 @@ function updateHover(mx,my){
   if(n!==hovered){
     hovered=n;
     if(n){
+      tip.classList.remove("side");
       tip.style.display="block";
       tip.innerHTML=escapeHtml(shortTitle(n))+'<span class="c">'+n.cat+"</span>";
     }else tip.style.display="none";
@@ -1410,10 +1454,28 @@ function selectNode(n){
     b.className="conn";
     b.innerHTML='<span class="dot" style="background:'+m.color+'"></span>'+
                 escapeHtml(shortTitle(m))+
-                (readSet.has(m.id)?'<span class="rd">✓</span>':"");
-    b.onclick=()=>selectNode(m);
-    b.onmouseenter=()=>{linkHover=m;};
-    b.onmouseleave=()=>{if(linkHover===m)linkHover=null;};
+                '<span class="right">'+
+                (readSet.has(m.id)?'<span class="rd">✓</span>':"")+
+                '<span class="q-add" title="다음에 읽기에 담기">+</span></span>';
+    b.onclick=e=>{
+      if(e.target.closest(".q-add")){queueAdd(m);return;}
+      selectNode(m);
+    };
+    b.onmouseenter=e=>{
+      linkHover=m;
+      const sum=firstPara(m).slice(0,90);
+      tip.classList.add("side");
+      tip.innerHTML=escapeHtml(shortTitle(m))+'<span class="c">'+m.cat+"</span>"+
+        (sum?'<div class="tsum">'+escapeHtml(sum)+"</div>":"");
+      tip.style.display="block";
+      const r=panel.getBoundingClientRect();
+      tip.style.left=(r.left-12)+"px";
+      tip.style.top=(e.clientY)+"px";
+    };
+    b.onmouseleave=()=>{
+      if(linkHover===m)linkHover=null;
+      tip.style.display="none";tip.classList.remove("side");
+    };
     conn.appendChild(b);
   });
   // 읽음: 12초 이상 머물면 자동 착륙 기록, 버튼으로 즉시/해제 가능
@@ -1422,9 +1484,99 @@ function selectNode(n){
   readTimer=setTimeout(()=>{if(selected===n)markRead(n);},12000);
   panel.classList.add("open");
   hud2("TARGET: "+shortTitle(n));
+  histPush(n);
   track("doc_open",n.id,{cat:n.cat});
 }
 document.getElementById("p-read").onclick=()=>{if(selected)toggleRead(selected);};
+/* ── 문서 다운로드 (.md) ── */
+document.getElementById("p-dl").onclick=()=>{
+  if(!selected)return;
+  const md="# "+(selected.title||selected.id)+"\n\n"+(selected.body||"")+
+    "\n\n---\n\n_Game Design Atlas · "+selected.id+"_\n";
+  const blob=new Blob([md],{type:"text/markdown;charset=utf-8"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download=selected.id+".md";
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),3000);
+  hud2("저장됨: "+selected.id+".md");
+  track("doc_download",selected.id);
+};
+
+/* ── 항해 히스토리: 패널 ◀▶ + 브라우저 뒤로가기 + 딥링크 ── */
+let histStack=[],histPos=-1,histNavigating=false;
+function histPush(n){
+  if(histNavigating)return;
+  histStack=histStack.slice(0,histPos+1);
+  if(histStack[histPos]!==n.id){
+    histStack.push(n.id);histPos=histStack.length-1;
+    if(histStack.length>100){histStack.shift();histPos--;}
+    try{history.pushState({doc:n.id},"","#"+encodeURIComponent(n.id));}catch(e){}
+  }
+  updateHistBtns();
+}
+function histGo(delta){
+  const np=histPos+delta;
+  if(np<0||np>=histStack.length)return;
+  histPos=np;
+  const n=byId.get(histStack[np]);
+  if(n){
+    histNavigating=true;selectNode(n);histNavigating=false;
+    try{history.replaceState({doc:n.id},"","#"+encodeURIComponent(n.id));}catch(e){}
+  }
+  updateHistBtns();
+}
+function updateHistBtns(){
+  document.getElementById("hist-back").disabled=histPos<=0;
+  document.getElementById("hist-fwd").disabled=histPos>=histStack.length-1;
+}
+document.getElementById("hist-back").onclick=()=>histGo(-1);
+document.getElementById("hist-fwd").onclick=()=>histGo(1);
+addEventListener("popstate",e=>{
+  const id=e.state&&e.state.doc;
+  if(id&&byId.get(id)){
+    const idx=histStack.lastIndexOf(id);
+    if(idx>=0)histPos=idx;
+    histNavigating=true;selectNode(byId.get(id));histNavigating=false;
+    updateHistBtns();
+  }else if(selected)closePanel();
+});
+// 딥링크: URL 해시에 문서 id가 있으면 부팅 직후 그 별로
+try{
+  const deepId=decodeURIComponent(location.hash.slice(1));
+  if(deepId&&byId.get(deepId))setTimeout(()=>selectNode(byId.get(deepId)),800);
+}catch(e){}
+
+/* ── 다음에 읽기 대기열 ── */
+let readQueue=[];
+function queueRender(){
+  const q=document.getElementById("queue"),c=document.getElementById("q-chips");
+  q.hidden=readQueue.length===0;
+  c.innerHTML="";
+  readQueue.forEach((m,i)=>{
+    const b=document.createElement("button");
+    b.innerHTML=escapeHtml(shortTitle(m).slice(0,14))+'<span class="x">✕</span>';
+    b.onmouseenter=()=>{linkHover=m;};
+    b.onmouseleave=()=>{if(linkHover===m)linkHover=null;};
+    b.onclick=e=>{
+      readQueue.splice(i,1);
+      if(e.target.closest(".x")){queueRender();return;}
+      queueRender();selectNode(m);
+    };
+    c.appendChild(b);
+  });
+}
+function queueAdd(m){
+  if(m===selected||readQueue.includes(m))return;
+  readQueue.push(m);queueRender();
+  hud2("다음에 읽기에 담김: "+shortTitle(m));
+  track("queue_add",m.id);
+}
+document.getElementById("q-next").onclick=()=>{
+  if(!readQueue.length)return;
+  const m=readQueue.shift();queueRender();selectNode(m);
+};
+
 // 본문 속 위키링크 클릭 → 해당 별로 항해
 document.getElementById("p-article").addEventListener("click",e=>{
   const w=e.target.closest(".wl");
