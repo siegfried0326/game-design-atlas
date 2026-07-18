@@ -421,6 +421,15 @@
   .lock-card button:disabled{opacity:.4;cursor:default}
   .lock-err{min-height:18px;margin-top:12px;font-family:var(--mono);font-size:10px;
         color:#FF5E8A;letter-spacing:.06em}
+  .lock-radio{display:flex;gap:8px}
+  .lock-radio label{flex:1;cursor:pointer}
+  .lock-radio input{position:absolute;opacity:0;pointer-events:none}
+  .lock-radio span{display:block;text-align:center;padding:10px;background:#060913;
+        border:1px solid var(--line);color:var(--dim);font-size:13px;
+        transition:all .15s}
+  .lock-radio input:checked+span{background:var(--accent);border-color:var(--accent);
+        color:#060913;font-weight:600}
+  .lock-radio label:hover span{border-color:var(--dim)}
   .lock-note{margin-top:18px;padding-top:16px;border-top:1px solid var(--line);
         font-family:var(--mono);font-size:9px;line-height:1.9;letter-spacing:.05em;
         color:var(--faint);word-break:keep-all}
@@ -674,11 +683,14 @@ async function unlockGate(){
   const V=JSON.parse(document.getElementById("vault").textContent);
   const lockEl=document.getElementById("lock");
   const roster=V.mode==="roster";
+  const cohortMode=V.mode==="cohort";
   // 명단 모드: 코드가 곧 신원 → 이름 입력란 숨김
   if(roster){
     document.getElementById("lock-who").style.display="none";
     document.querySelector('label[for="lock-who"]').style.display="none";
   }
+  // 소속 라디오는 기수 모드에서만
+  if(!cohortMode)document.getElementById("lock-kind-row").style.display="none";
   // 이 기기에서 30일간 재입력 생략
   try{
     const saved=JSON.parse(localStorage.getItem("gda-unlock")||"null");
@@ -687,7 +699,8 @@ async function unlockGate(){
         {name:"AES-GCM"},false,["decrypt"]);
       const data=await tryDecrypt(key,V);
       lockEl.classList.add("hidden");
-      return {data,who:saved.who||"CADET"};
+      return {data,who:saved.who||"CADET",
+              cohort:saved.cohort||"",kind:saved.kind||"",fresh:false};
     }
   }catch(e){}
   return new Promise(resolve=>{
@@ -696,14 +709,17 @@ async function unlockGate(){
           btn=document.getElementById("lock-btn"),
           err=document.getElementById("lock-err");
     who.value=localStorage.getItem("gda-who")||"";
-    async function persist(key,whoName,data){
+    async function persist(key,whoName,data,extra){
+      extra=extra||{};
       const raw=await crypto.subtle.exportKey("raw",key);
       localStorage.setItem("gda-unlock",JSON.stringify({
         k:btoa(String.fromCharCode(...new Uint8Array(raw))),
-        who:whoName, exp:Date.now()+30*864e5}));
+        who:whoName, exp:Date.now()+30*864e5,
+        cohort:extra.cohort||"", kind:extra.kind||""}));
       localStorage.setItem("gda-who",whoName);
       lockEl.classList.add("hidden");
-      resolve({data,who:whoName});
+      resolve({data,who:whoName,cohort:extra.cohort||"",
+               kind:extra.kind||"",fresh:true});
     }
     async function go(){
       if(!roster&&!who.value.trim()){
@@ -712,7 +728,26 @@ async function unlockGate(){
       // 복붙 시 딸려오는 공백·줄바꿈·제로폭 문자 제거
       const codeRaw=pw.value.replace(new RegExp("[\\s\\u200B-\\u200D\\uFEFF]","g"),"");
       try{
-        if(roster){
+        if(cohortMode){
+          // 기수 코드 → 랩핑된 마스터 키 대조
+          const code=codeRaw.toUpperCase();
+          const wkey=await deriveKey(code,b64d(V.wsalt));
+          let masterRaw=null,matched=null;
+          for(const ent of V.entries){
+            try{
+              masterRaw=await crypto.subtle.decrypt(
+                {name:"AES-GCM",iv:b64d(ent.iv)},wkey,b64d(ent.w));
+              matched=ent;break;
+            }catch(err){}
+          }
+          if(!matched)throw new Error("no match");
+          const key=await crypto.subtle.importKey("raw",masterRaw,
+            {name:"AES-GCM"},true,["decrypt"]);
+          const data=await tryDecrypt(key,V);
+          const kindEl=document.querySelector('input[name="lk-kind"]:checked');
+          await persist(key,who.value.trim(),data,
+            {cohort:matched.n,kind:kindEl?kindEl.value:"학원"});
+        }else if(roster){
           // 개인 코드 → 랩핑된 마스터 키 대조
           const code=codeRaw.toUpperCase();
           const wkey=await deriveKey(code,b64d(V.wsalt));
@@ -759,7 +794,10 @@ if(!GUEST){GUEST="LITE-"+Math.random().toString(36).slice(2,6).toUpperCase();
 const GATE={data:JSON.parse(document.getElementById("vault").textContent),who:GUEST};
 const DATA=GATE.data.graph;
 const PATHS_DATA=GATE.data.paths||{paths:[],lineages:[]};
-const WATERMARK="PATRICK GAME DESIGN ATLAS";
+const COHORT=GATE.cohort||"";
+const KIND=GATE.kind||"";
+const WATERMARK=GATE.who+(COHORT?" · "+COHORT:"")+" · "+
+  new Date().toISOString().slice(0,10);
 
 /* ══ 접속 지표 (Supabase, 기록 전용 키) ══ */
 const ANALYTICS={
@@ -777,7 +815,18 @@ function track(event,target,meta){
     }).catch(()=>{});
   }catch(e){}
 }
-track("session_start");
+track("session_start",COHORT||null,{kind:KIND||null});
+// 로그인 기록 → atlas_logins 테이블 (없으면 조용히 무시)
+try{
+  fetch("https://ascyodcbebjkraacxklo.supabase.co/rest/v1/atlas_logins",{
+    method:"POST",keepalive:true,
+    headers:{apikey:ANALYTICS.key,Authorization:"Bearer "+ANALYTICS.key,
+             "Content-Type":"application/json",Prefer:"return=minimal"},
+    body:JSON.stringify({nickname:GATE.who,cohort:COHORT,kind:KIND,
+      session_id:SID,fresh:!!GATE.fresh})
+  }).catch(()=>{});
+}catch(e){}
+if(GATE.fresh)track("login",COHORT||null,{kind:KIND||null});
 const ALIAS = DATA.aliases || {};
 const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
