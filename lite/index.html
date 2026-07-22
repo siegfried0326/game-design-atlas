@@ -745,8 +745,14 @@ async function unlockGate(){
             {name:"AES-GCM"},true,["decrypt"]);
           const data=await tryDecrypt(key,V);
           const kindEl=document.querySelector('input[name="lk-kind"]:checked');
-          await persist(key,who.value.trim(),data,
-            {cohort:matched.n,kind:kindEl?kindEl.value:"학원"});
+          if(matched.n==="마스터"){
+            // 마스터 계정: 신원 고정
+            await persist(key,"magicup0326@gmail.com",data,
+              {cohort:"마스터",kind:"마스터"});
+          }else{
+            await persist(key,who.value.trim(),data,
+              {cohort:matched.n,kind:kindEl?kindEl.value:"학원"});
+          }
         }else if(roster){
           // 개인 코드 → 랩핑된 마스터 키 대조
           const code=codeRaw.toUpperCase();
@@ -816,8 +822,8 @@ function track(event,target,meta){
   }catch(e){}
 }
 track("session_start",COHORT||null,{kind:KIND||null});
-// 로그인 기록 → atlas_logins 테이블 (없으면 조용히 무시)
-try{
+// 로그인 기록 → atlas_logins 테이블 (기수 모드에서만, 없으면 조용히 무시)
+if(COHORT)try{
   fetch("https://ascyodcbebjkraacxklo.supabase.co/rest/v1/atlas_logins",{
     method:"POST",keepalive:true,
     headers:{apikey:ANALYTICS.key,Authorization:"Bearer "+ANALYTICS.key,
