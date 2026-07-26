@@ -308,6 +308,24 @@
   .sector-prog .row .n{font-family:var(--mono);font-size:10px;font-variant-numeric:tabular-nums}
   .sector-prog .bar{height:5px;background:#0E1526}
   .sector-prog .bar i{display:block;height:100%}
+  /* 계정 카드 */
+  .acct{display:flex;align-items:center;gap:12px;background:#0E1526;
+        padding:14px 16px;margin-bottom:24px}
+  .acct .av{width:36px;height:36px;background:var(--accent);color:#060913;
+        display:flex;align-items:center;justify-content:center;font-weight:700;
+        font-size:16px;flex:none}
+  .acct .inf{flex:1;min-width:0}
+  .acct .nm{font-size:13.5px;color:var(--star);font-weight:600;
+        overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .acct .nm .tag{font-family:var(--mono);font-size:9px;color:var(--accent);
+        letter-spacing:.14em;margin-left:8px;font-weight:400}
+  .acct .em{font-family:var(--mono);font-size:9.5px;color:var(--dim);
+        overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px}
+  .acct .logout-btn{background:none;border:1px solid var(--line);color:var(--dim);
+        font-family:var(--mono);font-size:9px;letter-spacing:.12em;padding:7px 12px;
+        cursor:pointer;flex:none;transition:all .15s}
+  .acct .logout-btn:hover{color:#FF5E8A;border-color:rgba(255,94,138,.5)}
+
   .my-view-btn{width:100%;margin-top:22px;background:none;border:1px solid var(--line);
         color:var(--dim);font-family:var(--mono);font-size:10px;letter-spacing:.2em;
         padding:11px;cursor:pointer;transition:all .15s}
@@ -2180,7 +2198,30 @@ function renderMylog(){
       '<span class="n">'+r+" / "+t+"</span></div>"+
       '<div class="bar"><i style="width:'+pct+'%;background:'+CAT_COLOR[c]+'"></i></div></div>';
   }).join("");
+  // 탐사한 별 목록 (최근 착륙 순, 최대 60개 표시)
+  const readList=[...readSet].reverse();
+  const readShown=readList.slice(0,60);
+  const readHtml=readSet.size?
+    readShown.map(id=>{
+      const m=byId.get(id);if(!m)return"";
+      return '<button class="conn read-item" data-id="'+escapeHtml(id)+'">'+
+        '<span class="dot" style="background:'+m.color+'"></span>'+
+        escapeHtml(shortTitle(m))+
+        (favSet.has(id)?'<span class="right"><span class="fv">★</span></span>':"")+
+        "</button>";
+    }).join("")+
+    (readList.length>60?'<p style="color:var(--faint);font-size:11px;margin-top:8px">외 '+
+      (readList.length-60)+"개 — 별 지도에서 녹색 링으로 표시됩니다.</p>":"")
+    :'<p style="color:var(--faint);font-size:12px;line-height:1.8">아직 착륙한 별이 없습니다. 별을 열고 잠시 머물거나 착륙 기록 버튼을 눌러 보세요.</p>';
   document.getElementById("mylog-body").innerHTML=
+    '<div class="acct">'+
+      '<div class="av">'+escapeHtml((GATE.who||"?").slice(0,1).toUpperCase())+"</div>"+
+      '<div class="inf"><div class="nm">'+escapeHtml(GATE.who||"")+
+        (COHORT?'<span class="tag">'+escapeHtml(COHORT)+
+          (KIND&&KIND!==COHORT?" · "+escapeHtml(KIND):"")+"</span>":"")+"</div>"+
+        (EMAIL?'<div class="em">'+escapeHtml(EMAIL)+"</div>":"")+"</div>"+
+      ((COHORT||EMAIL)?'<button class="logout-btn" id="logout-btn">로그아웃</button>':"")+
+    "</div>"+
     '<div class="stat-row">'+
     '<div class="stat"><div class="k">탐사한 별</div><div class="v">'+readSet.size+
       '<small> / '+nodes.length+'</small></div></div>'+
@@ -2190,6 +2231,7 @@ function renderMylog(){
       '<small> 개</small></div></div>'+
     "</div><h3>섹터별 진도</h3>"+bars+
     '<button class="my-view-btn" id="my-view-btn">MY CONSTELLATION — 내 별자리 보기</button>'+
+    '<h3 style="margin-top:28px">탐사한 별 — '+readSet.size+"</h3>"+readHtml+
     '<h3 style="margin-top:28px">즐겨찾은 별 — '+favSet.size+"</h3>"+
     (favSet.size?[...favSet].map(id=>{
       const m=byId.get(id);if(!m)return"";
@@ -2200,6 +2242,23 @@ function renderMylog(){
     }).join(""):
       '<p style="color:var(--faint);font-size:12px;line-height:1.8">문서 패널의 ☆ 버튼으로 별을 담을 수 있습니다.</p>')+
     (favSet.size?'<button class="my-view-btn" id="fav-view-btn" style="margin-top:14px;border-color:rgba(255,217,138,.4)">★ FAVORITES — 즐겨찾은 별만 보기</button>':"");
+  const lo=document.getElementById("logout-btn");
+  if(lo)lo.onclick=()=>{
+    if(!confirm("로그아웃할까요? 다음 접속 시 다시 로그인해야 합니다."))return;
+    track("logout",COHORT||null);
+    localStorage.removeItem("gda-unlock");
+    localStorage.removeItem("gda-google");
+    location.reload();
+  };
+  document.querySelectorAll("#mylog-body .read-item").forEach(b=>{
+    b.onclick=()=>{
+      const m=byId.get(b.dataset.id);
+      mylogEl.classList.remove("open");
+      if(m)selectNode(m);
+    };
+    b.onmouseenter=()=>{const m=byId.get(b.dataset.id);if(m)linkHover=m;};
+    b.onmouseleave=()=>{linkHover=null;};
+  });
   document.querySelectorAll("#mylog-body .fav-item").forEach(b=>{
     b.onclick=e=>{
       const id=b.dataset.id,m=byId.get(id);
