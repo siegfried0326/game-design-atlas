@@ -464,6 +464,10 @@
         font-family:var(--disp);font-size:14px;font-weight:600;padding:13px;
         cursor:pointer;transition:opacity .15s}
   .google-btn:hover{opacity:.88}
+  .skip-link{width:100%;margin-top:14px;background:none!important;border:none!important;
+        color:var(--faint)!important;font-family:var(--mono);font-size:9px;
+        letter-spacing:.14em;padding:6px!important;cursor:pointer;font-weight:400!important}
+  .skip-link:hover{color:var(--dim)!important}
   .google-who{display:flex;align-items:center;gap:8px;background:#060913;
         border:1px solid var(--line);padding:9px 12px;margin-bottom:6px}
   .google-who .gw-mail{flex:1 1 auto;min-width:0;font-family:var(--mono);font-size:10.5px;
@@ -792,6 +796,7 @@ async function unlockGate(){
   const lockEl=document.getElementById("lock");
   const roster=V.mode==="roster";
   const cohortMode=V.mode==="cohort";
+  let googleSkipped=false;   // 관리자 우회 여부
   // 명단 모드: 코드가 곧 신원 → 이름 입력란 숨김
   if(roster){
     document.getElementById("lock-who").style.display="none";
@@ -811,7 +816,16 @@ async function unlockGate(){
     document.getElementById("gw-out").onclick=()=>{
       localStorage.removeItem("gda-google");location.reload();
     };
-    if(!goog){ gStep.hidden=false; mStep.hidden=true; }
+    if(!goog){
+      gStep.hidden=false; mStep.hidden=true;
+      document.getElementById("lock-skip").onclick=()=>{
+        googleSkipped=true;
+        gStep.hidden=true; mStep.hidden=false;
+        document.getElementById("lock-step-label").textContent=
+          "ADMIN — 관리자 코드 입장";
+        document.getElementById("lock-pw").focus();
+      };
+    }
     else{
       const gw=document.getElementById("google-who");
       gw.hidden=false;
@@ -854,7 +868,7 @@ async function unlockGate(){
                kind:extra.kind||"",email:(googleSaved()||{}).email||"",fresh:true});
     }
     async function go(){
-      if(!roster&&!who.value.trim()){
+      if(!roster&&!googleSkipped&&!who.value.trim()){
         err.textContent="호출부호(이름)를 입력해 주세요.";who.focus();return;}
       err.textContent="";btn.disabled=true;btn.textContent="VERIFYING…";
       // 복붙 시 딸려오는 공백·줄바꿈·제로폭 문자 제거
@@ -873,6 +887,10 @@ async function unlockGate(){
             }catch(err){}
           }
           if(!matched)throw new Error("no match");
+          if(googleSkipped&&matched.n!=="마스터"){
+            err.textContent="구글 로그인이 필요합니다. 뒤로 가서 로그인해 주세요.";
+            btn.disabled=false;btn.textContent="ENTER ATLAS";pw.select();return;
+          }
           const key=await crypto.subtle.importKey("raw",masterRaw,
             {name:"AES-GCM"},true,["decrypt"]);
           const data=await tryDecrypt(key,V);
@@ -898,6 +916,10 @@ async function unlockGate(){
             }catch(e){}
           }
           if(!matched)throw new Error("no match");
+          if(googleSkipped&&matched.n!=="마스터"){
+            err.textContent="구글 로그인이 필요합니다. 뒤로 가서 로그인해 주세요.";
+            btn.disabled=false;btn.textContent="ENTER ATLAS";pw.select();return;
+          }
           const key=await crypto.subtle.importKey("raw",masterRaw,
             {name:"AES-GCM"},true,["decrypt"]);
           const data=await tryDecrypt(key,V);
@@ -1003,7 +1025,7 @@ links.forEach(l=>{
 /* ── 중심 항성: 지정 문서를 태양으로 (없으면 최다 연결 허브) ── */
 const SUN_ID="시스템-WW003-창발설계";   // 성도의 기준점 — 데이터가 늘어도 고정
 const sun = byId.get(SUN_ID) || nodes.reduce((a,b)=>b.deg>a.deg?b:a);
-sun.isSun=true; sun.x=sun.y=sun.z=0; sun.r=11; sun.color="#FFD98A";
+sun.isSun=true; sun.x=sun.y=sun.z=0; sun.r=12; sun.color="#CFE4FF";
 const sunLabel = (sun.title||sun.id).split(" — ")[0];
 
 /* ── 배경 별 ── */
@@ -1038,14 +1060,18 @@ function sprite(color){
   sprites[color]=s;return s;
 }
 const sunSprite=(()=>{
-  const s=document.createElement("canvas");s.width=s.height=128;
+  const s=document.createElement("canvas");s.width=s.height=256;
   const c=s.getContext("2d");
-  const g=c.createRadialGradient(64,64,0,64,64,64);
-  g.addColorStop(0,"#FFFFFF");g.addColorStop(.18,"#FFEFC8");
-  g.addColorStop(.4,"#FFD98A88");g.addColorStop(.7,"#FFB65E22");
-  g.addColorStop(1,"#FFB65E00");
-  c.fillStyle=g;c.fillRect(0,0,128,128);return s;
+  const g=c.createRadialGradient(128,128,0,128,128,128);
+  g.addColorStop(0,"#FFFFFF");        // 백색 코어
+  g.addColorStop(.10,"#F2F8FF");
+  g.addColorStop(.20,"#CFE4FFEE");    // 푸른빛 전이
+  g.addColorStop(.38,"#8FC4FF77");
+  g.addColorStop(.62,"#4E8FE022");
+  g.addColorStop(1,"#2A5FA000");      // 깊은 청색 헤일로
+  c.fillStyle=g;c.fillRect(0,0,256,256);return s;
 })();
+
 
 /* ── 카메라 ── */
 const cam={theta:.6,phi:1.15,dist:1500,cx:0,cy:0,cz:0,
@@ -1106,11 +1132,20 @@ function simTick(){
 let phase=0, warm=0, introStart=0;
 const CONV_DUR=1500, CONV_STAG=750, INTRO_END=CONV_DUR+CONV_STAG+250;
 function beginConverge(now){
+  // 무리 전체의 무게중심을 태양(원점)에 맞춘다 — 한쪽으로 쏠리는 것 방지
+  let cx=0,cy=0,cz=0,cnt=0;
   for(const n of nodes){
+    if(n.isSun)continue;
+    cx+=n.x;cy+=n.y;cz+=n.z;cnt++;
+  }
+  if(cnt){cx/=cnt;cy/=cnt;cz/=cnt;}
+  for(const n of nodes){
+    if(n.isSun){n.x=n.y=n.z=0;}
+    else{n.x-=cx;n.y-=cy;n.z-=cz;}
     n.tx=n.x; n.ty=n.y; n.tz=n.z;
-    const d=Math.hypot(n.x,n.y,n.z)||1;
+    const d=Math.hypot(n.tx,n.ty,n.tz)||1;
     const f=(1900+Math.random()*1100)/d;      // 자기 방향 바깥 구면에서 출발
-    n.ax=n.x*f; n.ay=n.y*f; n.az=n.z*f;
+    n.ax=n.tx*f; n.ay=n.ty*f; n.az=n.tz*f;
     n.delay=Math.random()*CONV_STAG;
     n.introE=0;
   }
@@ -1383,7 +1418,7 @@ function frame(now){
   ctx.globalAlpha=1;
 
   // 궤도 링 (태양 주위)
-  ctx.strokeStyle="#C8B98A";ctx.lineWidth=.7;
+  ctx.strokeStyle="#7FA8D8";ctx.lineWidth=.7;
   ctx.globalAlpha=.11*linkRamp;
   drawRing(150,.55,now*.00005);
   ctx.globalAlpha=.08*linkRamp;
@@ -1414,13 +1449,50 @@ function frame(now){
     const a=Math.min(n.glowCur,1.4)*Math.min(p.k*1.5,1)*ia;
     if(a<.015)continue;
     if(n.isSun){
-      const pulse=1+0.05*Math.sin(now*.0012);
-      const ss=size*pulse*1.35;
-      ctx.globalAlpha=Math.min(a*1.15,1);
+      // 이글거림: 서로 다른 주기의 사인파를 겹쳐 불규칙한 맥동
+      const flick=1+.055*Math.sin(now*.0013)+.035*Math.sin(now*.0031+1.7)
+                   +.02*Math.sin(now*.0071+.4);
+      const ss=size*flick*1.9;                     // 기존보다 크게
+      const A=Math.min(a,1);
+      // 바깥 헤일로
+      ctx.globalAlpha=A*.5;
+      ctx.drawImage(sunSprite,p.sx-ss*1.7,p.sy-ss*1.7,ss*3.4,ss*3.4);
+      // 본체
+      ctx.globalAlpha=Math.min(A*1.15,1);
       ctx.drawImage(sunSprite,p.sx-ss,p.sy-ss,ss*2,ss*2);
-      ctx.globalAlpha=Math.min(a*1.3,1);
-      ctx.fillStyle="#FFF8E8";
-      ctx.beginPath();ctx.arc(p.sx,p.sy,Math.max(ss*.16,1),0,6.283);ctx.fill();
+      // 회절 스파이크 — 코어에서 길게 뻗는 십자 광선
+      const sl=ss*3.6;
+      const flare=.7+.25*Math.sin(now*.0021);
+      for(const [dx,dy] of [[1,0],[0,1]]){
+        const g=ctx.createLinearGradient(p.sx-dx*sl,p.sy-dy*sl,
+                                         p.sx+dx*sl,p.sy+dy*sl);
+        g.addColorStop(0,"rgba(143,196,255,0)");
+        g.addColorStop(.30,"rgba(175,215,255,.14)");
+        g.addColorStop(.5,"rgba(255,255,255,.95)");
+        g.addColorStop(.70,"rgba(175,215,255,.14)");
+        g.addColorStop(1,"rgba(143,196,255,0)");
+        ctx.strokeStyle=g;
+        ctx.globalAlpha=A*flare;
+        ctx.lineWidth=1.3;
+        ctx.beginPath();
+        ctx.moveTo(p.sx-dx*sl,p.sy-dy*sl);ctx.lineTo(p.sx+dx*sl,p.sy+dy*sl);
+        ctx.stroke();
+        // 중심부만 굵게 겹쳐 광량 표현
+        ctx.globalAlpha=A*flare*.55;
+        ctx.lineWidth=4.5;
+        ctx.beginPath();
+        ctx.moveTo(p.sx-dx*sl*.35,p.sy-dy*sl*.35);
+        ctx.lineTo(p.sx+dx*sl*.35,p.sy+dy*sl*.35);
+        ctx.stroke();
+      }
+      // 얇은 청색 헤일로 링
+      ctx.globalAlpha=A*.16;
+      ctx.strokeStyle="#9FCBFF";ctx.lineWidth=1;
+      ctx.beginPath();ctx.arc(p.sx,p.sy,ss*1.55,0,6.283);ctx.stroke();
+      // 백색 코어
+      ctx.globalAlpha=Math.min(A*1.4,1);
+      ctx.fillStyle="#FFFFFF";
+      ctx.beginPath();ctx.arc(p.sx,p.sy,Math.max(ss*.20,1.5),0,6.283);ctx.fill();
       continue;
     }
     ctx.globalAlpha=Math.min(a,1);
@@ -1505,8 +1577,8 @@ function frame(now){
     if(ps){
       ctx.font="10px Menlo,monospace";ctx.textAlign="center";
       ctx.globalAlpha=.8*linkRamp;
-      ctx.fillStyle="#E8CB90";
-      ctx.fillText("· CORE — "+sunLabel+" ·", ps.sx, ps.sy+sun.r*ps.k*3.4+26);
+      ctx.fillStyle="#B8D4F5";
+      ctx.fillText("· CORE — "+sunLabel+" ·", ps.sx, ps.sy+sun.r*ps.k*6.5+30);
       ctx.globalAlpha=1;
     }
   }
