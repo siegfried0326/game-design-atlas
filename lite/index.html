@@ -1056,7 +1056,9 @@ function beginConverge(now){
     const d=Math.hypot(n.tx,n.ty,n.tz);
     if(d>rMax)rMax=d;
   }
-  FIT_DIST=Math.max(700,Math.min(2600,rMax*1.12));
+  // 원근 투영 기준: 반경 rMax가 화면 짧은 축의 90% 안에 들어오는 거리
+  FIT_DIST=Math.max(900,Math.min(2600,
+    rMax*FOV/(Math.min(W,H)*0.45)));
   MAX_DIST=FIT_DIST*1.45;
   if(REDUCED){                                 // 모션 최소화: 즉시 완성 상태
     for(const n of nodes){n.introE=1;}
