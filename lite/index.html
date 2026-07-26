@@ -1360,6 +1360,7 @@ function updateFavBtn(n){
 }
 
 function retarget(){
+  const anyFilter=activeCat||matchSet||myView||favView||designerSel||yearSel||tour||selected;
   for(const n of nodes){
     let g=1;
     if(activeCat && n.cat!==activeCat) g=.12;
@@ -1367,7 +1368,7 @@ function retarget(){
     if(myView){ g = readSet.has(n.id)?1.25:.05; }
     if(favView){ g = favSet.has(n.id)?1.3:.05; }
     if(designerSel){ g = designerSel.ids.has(n.id)?1.25:.06; }
-    if(yearSel){ g = (n.cat==="GDC"&&n.year===yearSel)?1.25:.05; }
+    if(yearSel){ g = (n.year===yearSel)?1.25:.05; }   // GDC 하위 분류 후에도 동작
     if(tour){ g = tour.steps.includes(n)?1.15:.06; }
     if(selected){
       if(tour){ g = n===selected?1.5:g*.9; }   // 투어 중엔 항로만 유지
@@ -1376,7 +1377,8 @@ function retarget(){
         g = (n===selected)?1.5 : nb.includes(n)?1.1 : Math.min(g,.10);
       }
     }
-    if(n.isSun) g=Math.max(g,.5);   // 태양은 항상 최소 밝기 유지
+    // 태양은 평상시에만 최소 밝기 유지 — 필터 중에는 함께 물러난다
+    if(n.isSun&&!anyFilter) g=Math.max(g,.5);
     n.glow=g;
   }
 }
@@ -1476,10 +1478,11 @@ function frame(now){
   ctx.globalAlpha=1;
 
   // 궤도 링 (태양 주위)
+  const sunFade=Math.min(sun.glowCur/.5,1);   // 태양이 어두워지면 궤도도 함께
   ctx.strokeStyle="#7FA8D8";ctx.lineWidth=.7;
-  ctx.globalAlpha=.11*linkRamp;
+  ctx.globalAlpha=.11*linkRamp*sunFade;
   drawRing(150,.55,now*.00005);
-  ctx.globalAlpha=.08*linkRamp;
+  ctx.globalAlpha=.08*linkRamp*sunFade;
   drawRing(240,-.35,-now*.00003);
   ctx.globalAlpha=1;
 
@@ -1634,7 +1637,7 @@ function frame(now){
     const ps=proj.get(sun.id);
     if(ps){
       ctx.font="10px Menlo,monospace";ctx.textAlign="center";
-      ctx.globalAlpha=.8*linkRamp;
+      ctx.globalAlpha=.8*linkRamp*Math.min(sun.glowCur/.5,1);
       ctx.fillStyle="#B8D4F5";
       ctx.fillText("· CORE — "+sunLabel+" ·", ps.sx, ps.sy+sun.r*ps.k*6.5+30);
       ctx.globalAlpha=1;
