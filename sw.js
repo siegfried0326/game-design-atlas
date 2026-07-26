@@ -1,4 +1,4 @@
-const C="gda-57f48146";
+const C="gda-35ef0f4c";
 self.addEventListener("install",e=>self.skipWaiting());
 self.addEventListener("activate",e=>e.waitUntil(
   caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))

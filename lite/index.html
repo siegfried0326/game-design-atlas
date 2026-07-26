@@ -421,6 +421,21 @@
   .lock-card button:disabled{opacity:.4;cursor:default}
   .lock-err{min-height:18px;margin-top:12px;font-family:var(--mono);font-size:10px;
         color:#FF5E8A;letter-spacing:.06em}
+  .lock-step{font-family:var(--mono);font-size:9px;letter-spacing:.24em;
+        color:var(--accent);margin-bottom:18px}
+  .google-btn{display:flex;align-items:center;justify-content:center;gap:10px;
+        width:100%;background:#FFFFFF;border:none;color:#1F1F1F;
+        font-family:var(--disp);font-size:14px;font-weight:600;padding:13px;
+        cursor:pointer;transition:opacity .15s}
+  .google-btn:hover{opacity:.88}
+  .google-who{display:flex;align-items:center;gap:8px;background:#060913;
+        border:1px solid var(--line);padding:9px 12px;margin-bottom:6px}
+  .google-who .gw-mail{flex:1 1 auto;min-width:0;font-family:var(--mono);font-size:10.5px;
+        color:var(--accent);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .google-who .gw-out{background:none;border:1px solid var(--line);color:var(--faint);
+        font-family:var(--mono);font-size:9px;letter-spacing:.1em;padding:4px 8px;
+        cursor:pointer;width:auto;margin:0;flex:none;font-weight:400}
+  .google-who .gw-out:hover{color:var(--star)}
   .lock-radio{display:flex;gap:8px}
   .lock-radio label{flex:1;cursor:pointer}
   .lock-radio input{position:absolute;opacity:0;pointer-events:none}
@@ -679,6 +694,38 @@ async function tryDecrypt(key,V){
   const stream=new Blob([pt]).stream().pipeThrough(new DecompressionStream("gzip"));
   return JSON.parse(await new Response(stream).text());
 }
+/* ══ 구글 로그인 (Supabase Auth) ══ */
+const GOOGLE_AUTH=false;   // 빌드 시 주입 (data/google_login.on 존재 여부)
+const SB_URL="https://ascyodcbebjkraacxklo.supabase.co";
+const SB_KEY="sb_publishable_Fo_bfjzXlPBGaLKumIzUuQ_CeFgKD0E";
+
+function googleSaved(){
+  try{return JSON.parse(localStorage.getItem("gda-google")||"null");}catch(e){return null;}
+}
+// OAuth 리다이렉트 복귀 처리 — 딥링크 해시와 충돌하지 않게 access_token만 가로챈다
+async function handleGoogleReturn(){
+  const h=location.hash||"";
+  if(h.indexOf("access_token=")<0)return;
+  const pr=new URLSearchParams(h.replace(/^#/,""));
+  const tok=pr.get("access_token");
+  history.replaceState(null,"",location.pathname+location.search);
+  if(!tok)return;
+  try{
+    const r=await fetch(SB_URL+"/auth/v1/user",
+      {headers:{apikey:SB_KEY,Authorization:"Bearer "+tok}});
+    if(!r.ok)return;
+    const u=await r.json();
+    const md=u.user_metadata||{};
+    localStorage.setItem("gda-google",JSON.stringify({
+      email:u.email||"",name:md.full_name||md.name||"",exp:Date.now()+30*864e5}));
+  }catch(e){}
+}
+function googleSignIn(){
+  const back=location.origin+location.pathname;
+  location.href=SB_URL+"/auth/v1/authorize?provider=google&redirect_to="+
+    encodeURIComponent(back);
+}
+
 async function unlockGate(){
   const V=JSON.parse(document.getElementById("vault").textContent);
   const lockEl=document.getElementById("lock");
@@ -691,6 +738,27 @@ async function unlockGate(){
   }
   // 소속 라디오는 기수 모드에서만
   if(!cohortMode)document.getElementById("lock-kind-row").style.display="none";
+  // 구글 로그인 단계
+  await handleGoogleReturn();
+  let goog=googleSaved();
+  if(goog&&goog.exp<Date.now()){localStorage.removeItem("gda-google");goog=null;}
+  const gStep=document.getElementById("lock-google-step"),
+        mStep=document.getElementById("lock-main-step");
+  if(GOOGLE_AUTH){
+    document.getElementById("lock-step-label").hidden=false;
+    document.getElementById("lock-google").onclick=googleSignIn;
+    document.getElementById("gw-out").onclick=()=>{
+      localStorage.removeItem("gda-google");location.reload();
+    };
+    if(!goog){ gStep.hidden=false; mStep.hidden=true; }
+    else{
+      const gw=document.getElementById("google-who");
+      gw.hidden=false;
+      document.getElementById("gw-mail").textContent=goog.email;
+      const whoIn=document.getElementById("lock-who");
+      if(!whoIn.value&&goog.name)whoIn.value=goog.name;
+    }
+  }
   // 이 기기에서 30일간 재입력 생략
   try{
     const saved=JSON.parse(localStorage.getItem("gda-unlock")||"null");
@@ -700,7 +768,8 @@ async function unlockGate(){
       const data=await tryDecrypt(key,V);
       lockEl.classList.add("hidden");
       return {data,who:saved.who||"CADET",
-              cohort:saved.cohort||"",kind:saved.kind||"",fresh:false};
+              cohort:saved.cohort||"",kind:saved.kind||"",
+              email:saved.email||"",fresh:false};
     }
   }catch(e){}
   return new Promise(resolve=>{
@@ -715,11 +784,12 @@ async function unlockGate(){
       localStorage.setItem("gda-unlock",JSON.stringify({
         k:btoa(String.fromCharCode(...new Uint8Array(raw))),
         who:whoName, exp:Date.now()+30*864e5,
-        cohort:extra.cohort||"", kind:extra.kind||""}));
+        cohort:extra.cohort||"", kind:extra.kind||"",
+        email:(googleSaved()||{}).email||""}));
       localStorage.setItem("gda-who",whoName);
       lockEl.classList.add("hidden");
       resolve({data,who:whoName,cohort:extra.cohort||"",
-               kind:extra.kind||"",fresh:true});
+               kind:extra.kind||"",email:(googleSaved()||{}).email||"",fresh:true});
     }
     async function go(){
       if(!roster&&!who.value.trim()){
@@ -802,6 +872,7 @@ const DATA=GATE.data.graph;
 const PATHS_DATA=GATE.data.paths||{paths:[],lineages:[]};
 const COHORT=GATE.cohort||"";
 const KIND=GATE.kind||"";
+const EMAIL=GATE.email||"";
 const WATERMARK=GATE.who+(COHORT?" · "+COHORT:"")+" · "+
   new Date().toISOString().slice(0,10);
 
@@ -829,7 +900,7 @@ if(COHORT)try{
     headers:{apikey:ANALYTICS.key,Authorization:"Bearer "+ANALYTICS.key,
              "Content-Type":"application/json",Prefer:"return=minimal"},
     body:JSON.stringify({nickname:GATE.who,cohort:COHORT,kind:KIND,
-      session_id:SID,fresh:!!GATE.fresh})
+      email:EMAIL||null,session_id:SID,fresh:!!GATE.fresh})
   }).catch(()=>{});
 }catch(e){}
 if(GATE.fresh)track("login",COHORT||null,{kind:KIND||null});
@@ -916,6 +987,8 @@ const cam={theta:.6,phi:1.15,dist:1500,cx:0,cy:0,cz:0,
            tTheta:.6,tPhi:1.15,tDist:1500,tcx:0,tcy:0,tcz:0};
 const FOV=1050;
 let panelShift=0;   // 패널 열릴 때 은하를 왼쪽으로 비켜주는 화면 오프셋
+let FIT_DIST=1500;  // 태양계 전체가 들어오는 거리 (레이아웃 확정 후 계산)
+let MAX_DIST=3400;  // 줌아웃 한계 — 너무 멀어지지 않게
 function project(n){
   const x=n.x-cam.cx, y=n.y-cam.cy, z=n.z-cam.cz;
   const st=Math.sin(cam.theta),ct=Math.cos(cam.theta);
@@ -977,12 +1050,22 @@ function beginConverge(now){
     n.introE=0;
   }
   sun.ax=sun.ay=sun.az=0; sun.delay=0;
+  // 정착 좌표 기준으로 "태양계 전체" 프레이밍 거리 계산
+  let rMax=0;
+  for(const n of nodes){
+    const d=Math.hypot(n.tx,n.ty,n.tz);
+    if(d>rMax)rMax=d;
+  }
+  FIT_DIST=Math.max(700,Math.min(2600,rMax*1.12));
+  MAX_DIST=FIT_DIST*1.45;
   if(REDUCED){                                 // 모션 최소화: 즉시 완성 상태
     for(const n of nodes){n.introE=1;}
+    cam.dist=cam.tDist=FIT_DIST;
     phase=2; hud2(defaultHud2()); return;
   }
   introStart=now; phase=1;
-  cam.dist=3100; cam.tDist=1500;
+  // 가운데 태양 클로즈업에서 시작 → 별들이 모여드는 동안 전체 프레임으로 물러남
+  cam.dist=470; cam.tDist=FIT_DIST;
 }
 function convergeStep(now){
   const gp=(now-introStart)/INTRO_END;
@@ -1368,7 +1451,7 @@ cv.addEventListener("pointermove",e=>{
     const [a,b]=[...ptrs.values()];
     const d=Math.hypot(a[0]-b[0],a[1]-b[1]);
     if(pinchDist>0&&d>0){
-      cam.tDist=Math.max(320,Math.min(3400,cam.tDist*pinchDist/d));
+      cam.tDist=Math.max(320,Math.min(MAX_DIST,cam.tDist*pinchDist/d));
       pinchDist=d;
     }
     return;
@@ -1393,7 +1476,7 @@ cv.addEventListener("pointerup",ptrEnd);
 cv.addEventListener("pointercancel",ptrEnd);
 cv.addEventListener("wheel",e=>{
   e.preventDefault();
-  cam.tDist=Math.max(320,Math.min(3400,cam.tDist*(1+e.deltaY*.0011)));
+  cam.tDist=Math.max(320,Math.min(MAX_DIST,cam.tDist*(1+e.deltaY*.0011)));
 },{passive:false});
 
 /* ── 피킹 ── */
@@ -1670,7 +1753,12 @@ addEventListener("popstate",e=>{
 // 딥링크: URL 해시에 문서 id가 있으면 부팅 직후 그 별로
 try{
   const deepId=decodeURIComponent(location.hash.slice(1));
-  if(deepId&&byId.get(deepId))setTimeout(()=>selectNode(byId.get(deepId)),800);
+  if(deepId&&byId.get(deepId)){
+    // 인트로 수렴이 끝난 뒤에 이동해야 카메라가 정착 좌표를 기준으로 잡는다
+    const waitBoot=setInterval(()=>{
+      if(phase===2){clearInterval(waitBoot);selectNode(byId.get(deepId));}
+    },200);
+  }
 }catch(e){}
 
 /* ── 다음에 읽기 대기열 ── */
@@ -1719,7 +1807,7 @@ document.getElementById("p-article").addEventListener("mouseout",e=>{
 function closePanel(){
   selected=null;linkHover=null;pulses.length=0;
   panel.classList.remove("open");retarget();
-  if(!matchSet&&!activeCat&&!tour){cam.tcx=0;cam.tcy=0;cam.tcz=0;cam.tDist=1500;}
+  if(!matchSet&&!activeCat&&!tour){cam.tcx=0;cam.tcy=0;cam.tcz=0;cam.tDist=FIT_DIST;}
   hud2(tour?("항로: "+tour.title):defaultHud2());
 }
 document.getElementById("panel-close").onclick=closePanel;
@@ -1745,7 +1833,7 @@ CAT_ORDER.forEach(cat=>{
     });
     retarget();
     if(activeCat)flyTo(nodes.filter(n=>n.cat===activeCat),1.35);
-    else{cam.tcx=0;cam.tcy=0;cam.tcz=0;cam.tDist=1500;}
+    else{cam.tcx=0;cam.tcy=0;cam.tcz=0;cam.tDist=FIT_DIST;}
     hud2(activeCat?("SECTOR: "+activeCat+" · "+counts[activeCat]+" DOCS"):defaultHud2());
   };
   sectorsEl.appendChild(b);
@@ -1767,7 +1855,7 @@ function doSearch(v){
   v=v.trim().toLowerCase();
   if(!v){matchSet=null;resultNodes=[];resultsEl.classList.remove("open");
     retarget();hud2(activeCat?("SECTOR: "+activeCat):defaultHud2());
-    if(!selected&&!activeCat){cam.tcx=0;cam.tcy=0;cam.tcz=0;cam.tDist=1500;}
+    if(!selected&&!activeCat){cam.tcx=0;cam.tcy=0;cam.tcz=0;cam.tDist=FIT_DIST;}
     return;}
   if(!bodyLC){bodyLC=new Map(nodes.map(n=>[n.id,(n.body||"").toLowerCase()]));}
   exitTour(true);myView=false;favView=false;designerSel=null;
@@ -1840,6 +1928,21 @@ addEventListener("keydown",e=>{
   if(tour&&document.activeElement!==q){
     if(e.key==="ArrowRight"){e.preventDefault();gotoWaypoint(tour.idx+1);}
     if(e.key==="ArrowLeft"){e.preventDefault();gotoWaypoint(tour.idx-1);}
+  }
+  // F: 포커싱 — 선택(또는 호버) 별로 카메라 급접근, 대상 없으면 전체 보기
+  if((e.key==="f"||e.key==="F")&&!e.metaKey&&!e.ctrlKey&&!e.altKey){
+    const tag=(document.activeElement&&document.activeElement.tagName)||"";
+    if(tag==="INPUT"||tag==="TEXTAREA")return;
+    e.preventDefault();
+    const t=selected||hovered||linkHover;
+    if(t){
+      cam.tcx=t.x;cam.tcy=t.y;cam.tcz=t.z;
+      cam.tDist=430;
+      hud2("FOCUS: "+shortTitle(t));
+    }else{
+      cam.tcx=0;cam.tcy=0;cam.tcz=0;cam.tDist=FIT_DIST;
+      hud2(defaultHud2());
+    }
   }
 });
 document.addEventListener("click",e=>{
@@ -2115,7 +2218,7 @@ function renderMylog(){
     closePanel();exitTour(true);activeCat=null;matchSet=null;myView=false;
     document.querySelectorAll(".sector").forEach(x=>x.classList.remove("on","off-dim"));
     myView=false;designerSel=null;favView=true;retarget();
-    cam.tcx=0;cam.tcy=0;cam.tcz=0;cam.tDist=1500;
+    cam.tcx=0;cam.tcy=0;cam.tcz=0;cam.tDist=FIT_DIST;
     hud2("FAVORITES · 즐겨찾은 별 "+favSet.size+"개 — ATLAS를 누르면 돌아갑니다");
   };
   document.getElementById("my-view-btn").onclick=()=>{
@@ -2123,7 +2226,7 @@ function renderMylog(){
     closePanel();exitTour(true);activeCat=null;matchSet=null;
     document.querySelectorAll(".sector").forEach(s=>s.classList.remove("on","off-dim"));
     favView=false;designerSel=null;myView=true;retarget();
-    cam.tcx=0;cam.tcy=0;cam.tcz=0;cam.tDist=1500;
+    cam.tcx=0;cam.tcy=0;cam.tcz=0;cam.tDist=FIT_DIST;
     hud2("MY CONSTELLATION · 탐사한 별 "+readSet.size+"개 — ATLAS를 누르면 돌아갑니다");
   };
 }
