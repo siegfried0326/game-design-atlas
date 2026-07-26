@@ -326,6 +326,14 @@
         cursor:pointer;flex:none;transition:all .15s}
   .acct .logout-btn:hover{color:#FF5E8A;border-color:rgba(255,94,138,.5)}
 
+  .sync-row{display:flex;align-items:center;gap:10px;margin:-16px 0 24px;
+        padding:9px 14px;background:#0B1120;border-left:2px solid var(--accent)}
+  .sync-row .sy-txt{flex:1;font-size:11px;color:var(--dim);line-height:1.6}
+  .sync-row .sy-btn{background:none;border:1px solid var(--line);color:var(--dim);
+        font-family:var(--mono);font-size:9px;letter-spacing:.12em;padding:6px 10px;
+        cursor:pointer;flex:none;width:auto;margin:0}
+  .sync-row .sy-btn:hover{color:var(--star)}
+
   .my-view-btn{width:100%;margin-top:22px;background:none;border:1px solid var(--line);
         color:var(--dim);font-family:var(--mono);font-size:10px;letter-spacing:.2em;
         padding:11px;cursor:pointer;transition:all .15s}
@@ -795,7 +803,8 @@ async function unlockGate(){
           who=document.getElementById("lock-who"),
           btn=document.getElementById("lock-btn"),
           err=document.getElementById("lock-err");
-    who.value=localStorage.getItem("gda-who")||"";
+    who.value=localStorage.getItem("gda-who")||
+              ((googleSaved()||{}).name)||"";
     async function persist(key,whoName,data,extra){
       extra=extra||{};
       const raw=await crypto.subtle.exportKey("raw",key);
@@ -922,6 +931,8 @@ if(COHORT)try{
   }).catch(()=>{});
 }catch(e){}
 if(GATE.fresh)track("login",COHORT||null,{kind:KIND||null});
+// 다른 기기의 학습 기록 동기화 (구글 로그인 사용자만)
+setTimeout(()=>{try{syncPull();}catch(e){}},1200);
 const ALIAS = DATA.aliases || {};
 const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -1131,14 +1142,14 @@ function updateReadHud(){
 }
 function markRead(n){
   if(readSet.has(n.id))return;
-  readSet.add(n.id);saveRead();updateReadHud();
+  readSet.add(n.id);saveRead();updateReadHud();syncPush();
   if(selected===n)updateReadBtn(n);
   if(tour)updateTourUI();
   track("read_mark",n.id,{total:readSet.size});
 }
 function toggleRead(n){
   readSet.has(n.id)?readSet.delete(n.id):readSet.add(n.id);
-  saveRead();updateReadHud();updateReadBtn(n);
+  saveRead();updateReadHud();updateReadBtn(n);syncPush();
   if(tour)updateTourUI();
 }
 function updateReadBtn(n){
@@ -1148,6 +1159,60 @@ function updateReadBtn(n){
   b.classList.toggle("on",on);
 }
 let readTimer=null;
+
+/* ══ 기기 간 동기화 (구글 이메일 기준) ══
+   전략: 로그인 시 서버 기록을 내려받아 로컬과 합집합(merge) → 다시 업로드.
+   삭제보다 보존을 우선하므로 어느 기기에서도 읽은 기록이 사라지지 않는다. */
+const SYNC_URL=SB_URL+"/rest/v1/atlas_progress";
+let syncTimer=null, syncReady=false;
+function syncHeaders(extra){
+  return Object.assign({apikey:SB_KEY,Authorization:"Bearer "+SB_KEY,
+    "Content-Type":"application/json"},extra||{});
+}
+function localRoutes(){
+  try{return JSON.parse(localStorage.getItem("gda-routes")||"[]");}catch(e){return [];}
+}
+function localTours(){
+  try{return JSON.parse(localStorage.getItem("gda-tours")||"[]");}catch(e){return [];}
+}
+async function syncPull(){
+  if(!EMAIL)return;
+  try{
+    const r=await fetch(SYNC_URL+"?email=eq."+encodeURIComponent(EMAIL)+
+      "&select=reads,favs,routes,tours",{headers:syncHeaders()});
+    if(!r.ok)return;
+    const rows=await r.json();
+    if(!rows.length){syncReady=true;syncPush();return;}
+    const rec=rows[0];
+    let changed=false;
+    (rec.reads||[]).forEach(id=>{if(byId.has(id)&&!readSet.has(id)){readSet.add(id);changed=true;}});
+    (rec.favs||[]).forEach(id=>{if(byId.has(id)&&!favSet.has(id)){favSet.add(id);changed=true;}});
+    if(changed){saveRead();saveFavs();updateReadHud();retarget();}
+    // 항로·투어는 로컬과 합쳐 중복 제거
+    const rt=localRoutes(), names=new Set(rt.map(x=>x.title));
+    (rec.routes||[]).forEach(x=>{if(x&&x.title&&!names.has(x.title)){rt.push(x);names.add(x.title);}});
+    localStorage.setItem("gda-routes",JSON.stringify(rt));
+    const tv=new Set([...localTours(),...(rec.tours||[])]);
+    localStorage.setItem("gda-tours",JSON.stringify([...tv]));
+    syncReady=true;
+    if(changed)hud2("다른 기기의 기록을 불러왔습니다 — 탐사 "+readSet.size+"개");
+    syncPush();
+  }catch(e){syncReady=true;}
+}
+function syncPush(){
+  if(!EMAIL||!syncReady)return;
+  clearTimeout(syncTimer);
+  syncTimer=setTimeout(async()=>{
+    try{
+      await fetch(SYNC_URL,{method:"POST",keepalive:true,
+        headers:syncHeaders({Prefer:"resolution=merge-duplicates,return=minimal"}),
+        body:JSON.stringify({email:EMAIL,reads:[...readSet],favs:[...favSet],
+          routes:localRoutes(),tours:localTours(),
+          nickname:GATE.who||"",cohort:COHORT||"",
+          updated_at:new Date().toISOString()})});
+    }catch(e){}
+  },1500);
+}
 
 /* ── 즐겨찾기 ── */
 const FAV_KEY="gda-favs";
@@ -1727,7 +1792,7 @@ document.getElementById("p-fav").onclick=()=>{
   if(!selected)return;
   const on=!favSet.has(selected.id);
   on?favSet.add(selected.id):favSet.delete(selected.id);
-  saveFavs();updateFavBtn(selected);
+  saveFavs();updateFavBtn(selected);syncPush();
   hud2(on?("즐겨찾음: "+shortTitle(selected)):"즐겨찾기 해제");
   track(on?"fav_add":"fav_remove",selected.id);
 };
@@ -2222,6 +2287,11 @@ function renderMylog(){
         (EMAIL?'<div class="em">'+escapeHtml(EMAIL)+"</div>":"")+"</div>"+
       ((COHORT||EMAIL)?'<button class="logout-btn" id="logout-btn">로그아웃</button>':"")+
     "</div>"+
+    (EMAIL?'<div class="sync-row"><span class="sy-txt" id="sync-txt">'+
+      '기기 간 동기화 켜짐 — 다른 기기에서도 같은 기록이 보입니다</span>'+
+      '<button class="sy-btn" id="sync-btn">지금 동기화</button></div>'
+      :'<div class="sync-row"><span class="sy-txt">이 기기에만 저장됩니다. '+
+       '구글 로그인을 하면 기기 간 동기화가 켜집니다.</span></div>')+
     '<div class="stat-row">'+
     '<div class="stat"><div class="k">탐사한 별</div><div class="v">'+readSet.size+
       '<small> / '+nodes.length+'</small></div></div>'+
@@ -2242,6 +2312,15 @@ function renderMylog(){
     }).join(""):
       '<p style="color:var(--faint);font-size:12px;line-height:1.8">문서 패널의 ☆ 버튼으로 별을 담을 수 있습니다.</p>')+
     (favSet.size?'<button class="my-view-btn" id="fav-view-btn" style="margin-top:14px;border-color:rgba(255,217,138,.4)">★ FAVORITES — 즐겨찾은 별만 보기</button>':"");
+  const sb=document.getElementById("sync-btn");
+  if(sb)sb.onclick=async()=>{
+    const t=document.getElementById("sync-txt");
+    sb.disabled=true;t.textContent="동기화 중…";
+    await syncPull();
+    renderMylog();
+    const t2=document.getElementById("sync-txt");
+    if(t2)t2.textContent="동기화 완료 — 탐사 "+readSet.size+"개 · 즐겨찾기 "+favSet.size+"개";
+  };
   const lo=document.getElementById("logout-btn");
   if(lo)lo.onclick=()=>{
     if(!confirm("로그아웃할까요? 다음 접속 시 다시 로그인해야 합니다."))return;
@@ -2495,7 +2574,7 @@ const buildbar=document.getElementById("buildbar");
 function myRoutes(){
   try{return JSON.parse(localStorage.getItem("gda-routes")||"[]");}catch(e){return [];}
 }
-function saveRoutes(r){localStorage.setItem("gda-routes",JSON.stringify(r));}
+function saveRoutes(r){localStorage.setItem("gda-routes",JSON.stringify(r));syncPush();}
 function renderMyRoutes(){
   document.querySelectorAll(".my-route,.my-route-label").forEach(el=>el.remove());
   const lab=document.createElement("div");
