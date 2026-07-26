@@ -233,6 +233,40 @@
   .path:hover{background:#151D33;color:var(--star)}
   .path.on{background:#12233A;color:var(--accent);border-left-color:var(--accent)}
 
+  /* ── 카테고리 문서 목록 ── */
+  .catlist{position:fixed;left:238px;top:96px;bottom:24px;width:330px;z-index:24;
+        background:linear-gradient(180deg,rgba(10,15,30,.94),rgba(6,9,19,.96));
+        border:1px solid var(--line);backdrop-filter:blur(14px);
+        display:none;flex-direction:column}
+  .catlist.open{display:flex}
+  .cl-head{display:flex;align-items:center;gap:9px;padding:16px 16px 12px;
+        border-bottom:1px solid var(--line)}
+  .cl-dot{width:9px;height:9px;flex:none;box-shadow:0 0 8px currentColor}
+  .cl-title{flex:1;font-family:var(--mono);font-size:10px;letter-spacing:.2em;
+        color:var(--star);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cl-close{background:none;border:1px solid var(--line);color:var(--dim);
+        width:24px;height:24px;cursor:pointer;font-size:11px;line-height:1;flex:none}
+  .cl-close:hover{color:var(--star)}
+  .cl-filter{margin:12px 16px 8px;background:#060913;border:1px solid var(--line);
+        color:var(--star);font-family:var(--disp);font-size:12.5px;padding:8px 11px;
+        outline:none}
+  .cl-filter:focus{border-color:rgba(111,211,231,.5)}
+  .cl-body{flex:1;overflow-y:auto;padding:4px 16px 16px}
+  .cl-body::-webkit-scrollbar{width:4px}
+  .cl-body::-webkit-scrollbar-thumb{background:var(--faint)}
+  .cl-item{display:flex;width:100%;align-items:center;gap:9px;padding:8px 0;
+        background:none;border:none;border-bottom:1px solid rgba(143,163,200,.08);
+        color:var(--dim);font-family:var(--disp);font-size:12.5px;text-align:left;
+        cursor:pointer;transition:color .15s;word-break:keep-all;line-height:1.45}
+  .cl-item:hover{color:var(--star)}
+  .cl-item.cur{color:var(--accent)}
+  .cl-item .d{width:6px;height:6px;flex:none;border-radius:50%}
+  .cl-item .mk{margin-left:auto;flex:none;font-size:9.5px}
+  .cl-empty{color:var(--faint);font-size:12px;padding:16px 0}
+  @media (max-width:1100px){.catlist{left:auto;right:24px;width:300px}}
+  @media (max-width:760px){.catlist{left:12px;right:12px;width:auto;top:auto;
+        bottom:64px;max-height:52vh}}
+
   /* ── 투어 바 ── */
   .tourbar{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:35;
         display:none;align-items:center;gap:16px;background:var(--panel);
@@ -543,7 +577,7 @@
     <a href="#" id="nav-atlas">ATLAS</a>
     <a href="#" id="nav-random" title="무작위 별로 워프">RANDOM</a>
     <a href="#" id="nav-designers" title="디자이너별 별자리">DESIGNERS</a>
-    <a href="#" id="nav-mylog" title="나의 탐사 기록">MY LOG</a>
+    <a href="#" id="nav-mylog" title="즐겨찾기·학습 기록">마이페이지</a>
     <a href="#" id="nav-quiz" title="연결 퀴즈">QUIZ</a>
     <a href="#" id="nav-about">ABOUT</a>
   </nav>
@@ -564,8 +598,8 @@
 <div class="about" id="mylog">
   <div class="about-card">
     <button class="about-close" id="mylog-close" aria-label="닫기">✕</button>
-    <h2>My Log</h2>
-    <div class="sub">나의 탐사 기록</div>
+    <h2>My Page</h2>
+    <div class="sub">즐겨찾기 · 학습 기록 · 계정</div>
     <div id="mylog-body"></div>
   </div>
 </div>
@@ -611,6 +645,16 @@
     <a class="dl" id="cert-dl" download="atlas-certificate.png">카드 저장</a>
     <button id="cert-close">닫기</button>
   </div>
+</div>
+
+<div class="catlist" id="catlist">
+  <div class="cl-head">
+    <span class="cl-dot" id="cl-dot"></span>
+    <span class="cl-title" id="cl-title"></span>
+    <button class="cl-close" id="cl-close" aria-label="목록 닫기">✕</button>
+  </div>
+  <input class="cl-filter" id="cl-filter" type="text" placeholder="이 분야에서 찾기…" autocomplete="off">
+  <div class="cl-body" id="cl-body"></div>
 </div>
 
 <div class="tourbar" id="tourbar">
@@ -691,6 +735,7 @@
     <button id="p-cmp" class="read-btn" style="margin-left:8px">⇄ 비교에 담기</button>
     <button id="p-dl" class="read-btn" style="margin-left:8px" title="이 문서를 마크다운 파일로 저장">⤓ MD 저장</button>
     <button id="p-fav" class="read-btn" style="margin-left:8px" title="즐겨찾기에 담기">☆ 즐겨찾기</button>
+    <button id="p-share" class="read-btn" style="margin-left:8px" title="이 문서로 바로 열리는 링크 복사">🔗 링크 복사</button>
   </div>
   <div class="panel-body">
     <div class="article" id="p-article"></div>
@@ -1894,6 +1939,7 @@ function selectNode(n){
   panel.classList.add("open");
   hud2("TARGET: "+shortTitle(n));
   histPush(n);
+  if(catListCat)renderCatList(document.getElementById("cl-filter").value);
   track("doc_open",n.id,{cat:n.cat});
 }
 document.getElementById("p-read").onclick=()=>{if(selected)toggleRead(selected);};
@@ -1910,6 +1956,30 @@ document.getElementById("p-dl").onclick=()=>{
   setTimeout(()=>URL.revokeObjectURL(a.href),3000);
   hud2("저장됨: "+selected.id+".md");
   track("doc_download",selected.id);
+};
+
+/* ── 링크 복사 (딥링크 공유) ── */
+document.getElementById("p-share").onclick=async()=>{
+  if(!selected)return;
+  const url=location.origin+location.pathname+"#"+encodeURIComponent(selected.id);
+  const btn=document.getElementById("p-share");
+  const done=()=>{
+    btn.textContent="✓ 복사됨";btn.classList.add("on");
+    hud2("링크 복사 완료 — 붙여넣기로 공유하세요");
+    setTimeout(()=>{btn.textContent="🔗 링크 복사";btn.classList.remove("on");},2200);
+  };
+  try{
+    await navigator.clipboard.writeText(url);done();
+  }catch(e){
+    // 클립보드 권한이 없을 때는 선택 가능한 상태로 노출
+    const ta=document.createElement("textarea");
+    ta.value=url;ta.style.position="fixed";ta.style.opacity="0";
+    document.body.appendChild(ta);ta.select();
+    try{document.execCommand("copy");done();}
+    catch(e2){prompt("아래 주소를 복사해 공유하세요",url);}
+    ta.remove();
+  }
+  track("share_link",selected.id);
 };
 
 /* ── 즐겨찾기 토글 ── */
@@ -2034,7 +2104,7 @@ function addSectorBtn(cat){
   b.innerHTML='<span class="dot" style="background:'+CAT_COLOR[cat]+
               '"></span>'+cat+'<span class="n">'+String(counts[cat]).padStart(3,"0")+"</span>";
   b.onclick=()=>{
-    exitTour(true);myView=false;favView=false;designerSel=null;yearSel=null;
+    exitTour(true);myView=false;favView=false;designerSel=null;yearSel=null;closeCatList();
     activeCat=(activeCat===cat)?null:cat;
     selected=null;panel.classList.remove("open");
     document.querySelectorAll(".sector").forEach(s=>{
@@ -2042,8 +2112,8 @@ function addSectorBtn(cat){
       s.classList.toggle("off-dim",activeCat!==null&&s!==b);
     });
     retarget();
-    if(activeCat)flyTo(nodes.filter(n=>n.cat===activeCat),1.35);
-    else{cam.tcx=0;cam.tcy=0;cam.tcz=0;cam.tDist=FIT_DIST;}
+    if(activeCat){flyTo(nodes.filter(n=>n.cat===activeCat),1.35);openCatList(cat);}
+    else{cam.tcx=0;cam.tcy=0;cam.tcz=0;cam.tDist=FIT_DIST;closeCatList();}
     hud2(activeCat?("SECTOR: "+activeCat+" · "+counts[activeCat]+" DOCS"):defaultHud2());
   };
   sectorsEl.appendChild(b);
@@ -2061,6 +2131,53 @@ CAT_ORDER.forEach(addSectorBtn);
   sectorsEl.appendChild(lab);
   has.forEach(addSectorBtn);
 })();
+
+/* ── 카테고리 문서 목록 ── */
+const catlistEl=document.getElementById("catlist");
+let catListCat=null;
+function renderCatList(filter){
+  const body=document.getElementById("cl-body");
+  const f=(filter||"").trim().toLowerCase();
+  const items=nodes.filter(n=>n.cat===catListCat)
+    .filter(n=>!f||(n.title||"").toLowerCase().includes(f)||n.id.toLowerCase().includes(f))
+    .sort((a,b)=>b.deg-a.deg);
+  body.innerHTML="";
+  if(!items.length){
+    body.innerHTML='<div class="cl-empty">해당하는 문서가 없습니다.</div>';return;
+  }
+  items.forEach(m=>{
+    const b=document.createElement("button");
+    b.className="cl-item"+(selected===m?" cur":"");
+    b.innerHTML='<span class="d" style="background:'+m.color+'"></span>'+
+      escapeHtml(shortTitle(m))+
+      '<span class="mk">'+(favSet.has(m.id)?'<span style="color:#FFD98A">★</span>':"")+
+      (readSet.has(m.id)?'<span style="color:#7EE787">✓</span>':"")+"</span>";
+    b.onclick=()=>selectNode(m);
+    b.onmouseenter=()=>{linkHover=m;};
+    b.onmouseleave=()=>{if(linkHover===m)linkHover=null;};
+    body.appendChild(b);
+  });
+}
+function openCatList(cat){
+  catListCat=cat;
+  document.getElementById("cl-dot").style.background=CAT_COLOR[cat];
+  document.getElementById("cl-dot").style.color=CAT_COLOR[cat];
+  document.getElementById("cl-title").textContent=cat+" · "+counts[cat];
+  document.getElementById("cl-filter").value="";
+  renderCatList("");
+  catlistEl.classList.add("open");
+  track("cat_list",cat);
+}
+function closeCatList(){catListCat=null;catlistEl.classList.remove("open");}
+document.getElementById("cl-filter").addEventListener("input",e=>renderCatList(e.target.value));
+document.getElementById("cl-close").onclick=()=>{
+  closeCatList();
+  if(activeCat){
+    activeCat=null;
+    document.querySelectorAll(".sector").forEach(x=>x.classList.remove("on","off-dim"));
+    retarget();hud2(defaultHud2());
+  }
+};
 
 /* ── HUD ── */
 function defaultHud2(){return "CORE: "+sunLabel+" · DRIFT MODE";}
@@ -2081,7 +2198,7 @@ function doSearch(v){
     if(!selected&&!activeCat){cam.tcx=0;cam.tcy=0;cam.tcz=0;cam.tDist=FIT_DIST;}
     return;}
   if(!bodyLC){bodyLC=new Map(nodes.map(n=>[n.id,(n.body||"").toLowerCase()]));}
-  exitTour(true);myView=false;favView=false;designerSel=null;yearSel=null;
+  exitTour(true);myView=false;favView=false;designerSel=null;yearSel=null;closeCatList();
   const scored=[];
   for(const n of nodes){
     const t=(n.title||"").toLowerCase(), id=n.id.toLowerCase();
@@ -2273,7 +2390,7 @@ document.getElementById("tour-exit").onclick=()=>exitTour();
     b.onclick=()=>{
       const on=b.classList.contains("on");
       document.querySelectorAll(".ybtn").forEach(x=>x.classList.remove("on"));
-      exitTour(true);myView=false;favView=false;designerSel=null;yearSel=null;
+      exitTour(true);myView=false;favView=false;designerSel=null;yearSel=null;closeCatList();
       activeCat=null;matchSet=null;q.value="";
       document.querySelectorAll(".sector").forEach(x=>x.classList.remove("on","off-dim"));
       closePanel();
@@ -2357,13 +2474,13 @@ designersEl.addEventListener("click",e=>{
 
 /* ── 내비게이션 / ABOUT ── */
 document.getElementById("nav-atlas").onclick=e=>{
-  e.preventDefault();exitTour(true);myView=false;favView=false;designerSel=null;yearSel=null;
+  e.preventDefault();exitTour(true);myView=false;favView=false;designerSel=null;yearSel=null;closeCatList();
   activeCat=null;matchSet=null;q.value="";
   document.querySelectorAll(".sector").forEach(s=>s.classList.remove("on","off-dim"));
   closePanel();retarget();
 };
 document.getElementById("nav-random").onclick=e=>{
-  e.preventDefault();exitTour(true);myView=false;favView=false;designerSel=null;yearSel=null;
+  e.preventDefault();exitTour(true);myView=false;favView=false;designerSel=null;yearSel=null;closeCatList();
   selectNode(nodes[Math.floor(Math.random()*nodes.length)]);
 };
 const aboutEl=document.getElementById("about");
@@ -2473,10 +2590,8 @@ function renderMylog(){
       '<small> 일</small></div></div>'+
     '<div class="stat"><div class="k">완주한 항로</div><div class="v">'+toursDone().length+
       '<small> 개</small></div></div>'+
-    "</div><h3>섹터별 진도</h3>"+bars+
-    '<button class="my-view-btn" id="my-view-btn">MY CONSTELLATION — 내 별자리 보기</button>'+
-    '<h3 style="margin-top:28px">탐사한 별 — '+readSet.size+"</h3>"+readHtml+
-    '<h3 style="margin-top:28px">즐겨찾은 별 — '+favSet.size+"</h3>"+
+    "</div>"+
+    '<h3>★ 즐겨찾은 별 — '+favSet.size+"</h3>"+
     (favSet.size?[...favSet].map(id=>{
       const m=byId.get(id);if(!m)return"";
       return '<button class="conn fav-item" data-id="'+escapeHtml(id)+'">'+
@@ -2484,8 +2599,11 @@ function renderMylog(){
         escapeHtml(shortTitle(m))+
         '<span class="right"><span class="fx" title="즐겨찾기 해제">✕</span></span></button>';
     }).join(""):
-      '<p style="color:var(--faint);font-size:12px;line-height:1.8">문서 패널의 ☆ 버튼으로 별을 담을 수 있습니다.</p>')+
-    (favSet.size?'<button class="my-view-btn" id="fav-view-btn" style="margin-top:14px;border-color:rgba(255,217,138,.4)">★ FAVORITES — 즐겨찾은 별만 보기</button>':"");
+      '<p style="color:var(--faint);font-size:12px;line-height:1.8">문서를 열고 <b style="color:#FFD98A">☆ 즐겨찾기</b> 버튼을 누르면 여기에 모입니다.</p>')+
+    (favSet.size?'<button class="my-view-btn" id="fav-view-btn" style="margin-top:14px;border-color:rgba(255,217,138,.4)">★ 즐겨찾은 별만 우주에서 보기</button>':"")+
+    '<h3 style="margin-top:30px">✓ 탐사한 별 — '+readSet.size+"</h3>"+readHtml+
+    (readSet.size?'<button class="my-view-btn" id="my-view-btn" style="margin-top:14px">MY CONSTELLATION — 내 별자리 보기</button>':"")+
+    "<h3 style=\"margin-top:30px\">섹터별 진도</h3>"+bars;
   const sb=document.getElementById("sync-btn");
   if(sb)sb.onclick=async()=>{
     const t=document.getElementById("sync-txt");
@@ -2535,7 +2653,8 @@ function renderMylog(){
     cam.tcx=0;cam.tcy=0;cam.tcz=0;cam.tDist=FIT_DIST;
     hud2("FAVORITES · 즐겨찾은 별 "+favSet.size+"개 — ATLAS를 누르면 돌아갑니다");
   };
-  document.getElementById("my-view-btn").onclick=()=>{
+  const mvb=document.getElementById("my-view-btn");
+  if(mvb)mvb.onclick=()=>{
     mylogEl.classList.remove("open");
     closePanel();exitTour(true);activeCat=null;matchSet=null;
     document.querySelectorAll(".sector").forEach(s=>s.classList.remove("on","off-dim"));
@@ -2779,7 +2898,7 @@ function renderMyRoutes(){
 function startBuilding(){
   const name=(prompt("새 항로의 이름은? (예: 나의 전투 디자인 항로)")||"").trim();
   if(!name)return;
-  exitTour(true);myView=false;favView=false;designerSel=null;yearSel=null;closePanel();
+  exitTour(true);myView=false;favView=false;designerSel=null;yearSel=null;closeCatList();closePanel();
   activeCat=null;matchSet=null;
   document.querySelectorAll(".sector").forEach(s=>s.classList.remove("on","off-dim"));
   building={title:name,steps:[]};
