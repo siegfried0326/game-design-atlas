@@ -1000,8 +1000,9 @@ links.forEach(l=>{
   adj.get(l.a.id).push(l.b); adj.get(l.b.id).push(l.a);
 });
 
-/* ── 중심 항성: 최다 연결 허브를 태양으로 ── */
-const sun = nodes.reduce((a,b)=>b.deg>a.deg?b:a);
+/* ── 중심 항성: 지정 문서를 태양으로 (없으면 최다 연결 허브) ── */
+const SUN_ID="시스템-WW003-창발설계";   // 성도의 기준점 — 데이터가 늘어도 고정
+const sun = byId.get(SUN_ID) || nodes.reduce((a,b)=>b.deg>a.deg?b:a);
 sun.isSun=true; sun.x=sun.y=sun.z=0; sun.r=11; sun.color="#FFD98A";
 const sunLabel = (sun.title||sun.id).split(" — ")[0];
 
